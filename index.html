@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Budget Tracker</title>
+    <title>Zenith Ledger</title>
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Use Inter font -->
@@ -23,6 +23,13 @@
             max-height: 400px;
             overflow-y: auto;
         }
+        /* Style adjustments for date input to match dark theme */
+        input[type="date"]::-webkit-calendar-picker-indicator {
+            filter: invert(1); /* Makes the calendar icon white */
+        }
+        input[type="date"] {
+            color-scheme: dark; /* Forces the internal date picker to use a dark scheme */
+        }
     </style>
 </head>
 <body class="p-4 sm:p-8">
@@ -34,7 +41,7 @@
     <div class="max-w-xl mx-auto">
         <!-- Header and Auth Status -->
         <header class="flex justify-between items-center mb-6">
-            <h1 class="text-3xl font-bold text-teal-400">Budget Tracker</h1>
+            <h1 class="text-3xl font-bold text-teal-400">Zenith Ledger</h1>
             <button id="auth-button" class="text-sm px-3 py-1 rounded-lg bg-red-600 hover:bg-red-700 transition" title="Click to Log In">
                 Login
             </button>
@@ -58,7 +65,7 @@
 
     <script type="module">
         // ----------------------------------------------------------------------
-        // 1. FIREBASE SETUP (Updated: Added Google Auth imports)
+        // 1. FIREBASE SETUP
         // ----------------------------------------------------------------------
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -89,7 +96,6 @@
         // ----------------------------------------------------------------------
 
         function showModal(title, message, isError = true) {
-            // (Modal logic remains the same)
             const modalTitle = document.getElementById('modal-title');
             const modalContent = document.getElementById('modal-content');
             
@@ -114,7 +120,6 @@
             const loadingOverlay = document.getElementById('loading-overlay');
             loadingOverlay.classList.remove('hidden');
             try {
-                // Initiates Google sign-in flow
                 await signInWithPopup(auth, provider);
             } catch (error) {
                 console.error("Google Sign-in failed:", error);
@@ -135,10 +140,10 @@
             const appContainer = document.getElementById('app-container');
 
             if (user) {
-                // USER IS LOGGED IN (SYNC WILL NOW WORK)
+                // USER IS LOGGED IN 
                 userId = user.uid;
                 authButton.textContent = 'Logout';
-                authButton.classList.remove('bg-red-600', 'hover:bg-red-700');
+                authButton.classList.remove('bg-red-600', 'hover:bg-red-700', 'bg-teal-600');
                 authButton.classList.add('bg-gray-600', 'hover:bg-gray-700');
                 authButton.removeEventListener('click', handleGoogleSignIn);
                 authButton.addEventListener('click', handleSignOut);
@@ -153,11 +158,10 @@
                 appContainer.innerHTML = renderLoginPrompt();
                 authButton.textContent = 'Login with Google';
                 authButton.classList.remove('bg-gray-600', 'hover:bg-gray-700');
-                authButton.classList.add('bg-teal-600', 'hover:bg-teal-700'); // Use teal for login call-to-action
+                authButton.classList.add('bg-teal-600', 'hover:bg-teal-700'); 
                 authButton.removeEventListener('click', handleSignOut);
                 authButton.addEventListener('click', handleGoogleSignIn);
 
-                // Handle the case where the button is not the primary login trigger
                 document.getElementById('google-login-button')?.addEventListener('click', handleGoogleSignIn);
             }
         });
@@ -174,6 +178,15 @@
                     </button>
                 </div>
             `;
+        }
+        
+        // Helper function to format the current date as YYYY-MM-DD for the input default
+        function getTodayDateString() {
+            const today = new Date();
+            const yyyy = today.getFullYear();
+            const mm = String(today.getMonth() + 1).padStart(2, '0'); // Months start at 0!
+            const dd = String(today.getDate()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}`;
         }
 
         // Function to render the main budget tracking UI
@@ -218,6 +231,12 @@
                             </label>
                         </div>
 
+                        <!-- Date Input -->
+                        <div class="mb-4">
+                            <label for="date" class="block text-sm font-medium mb-1 text-gray-300">Date</label>
+                            <input type="date" id="date" value="${getTodayDateString()}" required class="w-full p-3 rounded-lg bg-[#3a3a5a] border border-[#5a5a8a] focus:ring-teal-400 focus:border-teal-400 text-white">
+                        </div>
+                        
                         <!-- Description -->
                         <div class="mb-4">
                             <label for="description" class="block text-sm font-medium mb-1 text-gray-300">Description</label>
@@ -267,7 +286,7 @@
         }
 
         // ----------------------------------------------------------------------
-        // 3. DATABASE FUNCTIONS (No change needed here, it still relies on global userId)
+        // 3. DATABASE FUNCTIONS
         // ----------------------------------------------------------------------
 
         function getTransactionCollectionRef() {
@@ -287,9 +306,10 @@
             loadingOverlay.classList.remove('hidden');
 
             try {
+                // We use the specified date instead of serverTimestamp()
                 await addDoc(transactionsRef, {
                     ...data,
-                    timestamp: serverTimestamp() 
+                    timestamp: new Date(data.date) 
                 });
                 showModal("Success!", "Transaction saved successfully.", false);
             } catch (error) {
@@ -318,7 +338,6 @@
 
         function listenForTransactions() {
             if (!userId) {
-                // If not logged in, wait for the onAuthStateChanged to run
                 return; 
             }
             
@@ -333,6 +352,7 @@
             onSnapshot(q, (snapshot) => {
                 const transactions = [];
                 snapshot.forEach(doc => {
+                    // Convert Firestore timestamp to Date object if it exists
                     const timestamp = doc.data().timestamp ? doc.data().timestamp.toDate() : new Date();
                     transactions.push({
                         id: doc.id,
@@ -341,6 +361,7 @@
                     });
                 });
 
+                // Sort by date (newest first)
                 transactions.sort((a, b) => b.timestamp - a.timestamp);
 
                 renderTransactions(transactions);
@@ -361,7 +382,7 @@
         }
 
         // ----------------------------------------------------------------------
-        // 4. UI LOGIC (Updated to support dynamic rendering)
+        // 4. UI LOGIC 
         // ----------------------------------------------------------------------
         
         const formatCurrency = (amount) => {
@@ -428,6 +449,14 @@
 
             const currentBalance = totalIncome - totalExpenses;
 
+            currentBalanceEl.classList.remove('text-red-400', 'text-green-400');
+            if (currentBalance < 0) {
+                currentBalanceEl.classList.add('text-red-400');
+            } else if (currentBalance > 0) {
+                currentBalanceEl.classList.add('text-green-400');
+            }
+            currentBalanceEl.classList.add('text-white'); // Default color if zero
+
             totalIncomeEl.textContent = formatCurrency(totalIncome);
             totalExpensesEl.textContent = formatCurrency(totalExpenses);
             currentBalanceEl.textContent = formatCurrency(currentBalance);
@@ -445,8 +474,9 @@
                 const description = document.getElementById('description').value.trim();
                 const amount = parseFloat(document.getElementById('amount').value);
                 const category = document.getElementById('category').value;
+                const date = document.getElementById('date').value; // Get the selected date
 
-                if (description === '' || isNaN(amount) || amount <= 0 || category === '') {
+                if (description === '' || isNaN(amount) || amount <= 0 || category === '' || date === '') {
                     showModal("Input Error", "Please ensure all fields are filled correctly and the amount is positive.", true);
                     return;
                 }
@@ -455,16 +485,14 @@
                     type,
                     description,
                     amount,
-                    category
+                    category,
+                    date
                 };
 
                 addTransaction(newTransaction);
                 e.target.reset(); // Clear form
-            });
-            
-            // Theme toggle logic (decorative now)
-            document.getElementById('theme-toggle')?.addEventListener('click', () => {
-                 showModal("Feature Not Implemented", "The theme toggle is currently decorative. The app is set to dark mode permanently.", false);
+                // Reset the date input back to today after reset()
+                document.getElementById('date').value = getTodayDateString(); 
             });
 
             // Initial styling for radio buttons
@@ -480,8 +508,8 @@
                         incomeLabel.className = 'flex-1 p-3 rounded-lg border-2 border-green-500 bg-green-900/20 cursor-pointer transition';
                         expenseLabel.className = 'flex-1 p-3 rounded-lg border border-[#5a5a8a] cursor-pointer transition';
                     } else {
+                        incomeLabel.className = 'flex-1 p-3 rounded-lg border-2 border-red-500 bg-red-900/20 cursor-pointer transition';
                         incomeLabel.className = 'flex-1 p-3 rounded-lg border border-[#5a5a8a] cursor-pointer transition';
-                        expenseLabel.className = 'flex-1 p-3 rounded-lg border-2 border-red-500 bg-red-900/20 cursor-pointer transition';
                     }
                 };
 
