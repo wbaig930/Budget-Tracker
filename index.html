@@ -4,518 +4,421 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Zenith Ledger</title>
+    <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Use Inter font -->
     <style>
-        /* Base styles for the mobile-first design and a light background gradient */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
         body {
-            /* Light Mode Background */
-            background: linear-gradient(135deg, #f0fdfa 0%, #d1f7f0 100%);
+            font-family: 'Inter', sans-serif;
+            background-color: #1a1a2e; /* Dark theme background */
+            color: #ffffff;
             min-height: 100vh;
-            transition: background-color 0.3s;
-        }
-        /* Dark Mode Background */
-        .dark body {
-            background: linear-gradient(135deg, #1f2937 0%, #0f172a 100%);
         }
         .card {
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-            transition: background-color 0.3s, color 0.3s;
+            background-color: #272741;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
-        .dark .card {
-             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
-        }
-        /* Custom scrollbar for transaction list */
-        #transaction-list-container::-webkit-scrollbar {
-            width: 6px;
-        }
-        #transaction-list-container::-webkit-scrollbar-thumb {
-            background-color: #99f6e4;
-            border-radius: 3px;
-        }
-        .dark #transaction-list-container::-webkit-scrollbar-thumb {
-            background-color: #0D9488;
+        .scrollable-list {
+            max-height: 400px;
+            overflow-y: auto;
         }
     </style>
-    <script>
-        // Customizing Tailwind to use a calming, vibrant theme
-        tailwind.config = {
-            darkMode: 'class', // Enable dark mode based on the 'dark' class on the <html> tag
-            theme: {
-                extend: {
-                    colors: {
-                        'primary': '#0D9488', // Teal 600
-                        'secondary': '#14B8A6', // Teal 500
-                        'income-color': '#059669', // Emerald 600
-                        'expense-color': '#DC2626', // Red 600
-                    },
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                    },
-                }
-            }
-        }
-    </script>
 </head>
-<body class="font-sans p-4 sm:p-6">
-    <div id="app" class="max-w-lg mx-auto">
-        <header class="mb-6 flex justify-between items-start">
-            <div>
-                <h1 class="text-4xl font-extrabold text-primary tracking-tight dark:text-secondary">Zenith Ledger</h1>
-                <p id="user-info" class="text-sm text-gray-500 mt-1 dark:text-gray-400"></p>
-            </div>
-            <!-- Dark Mode Toggle Switch -->
-            <button id="theme-toggle" class="p-2 rounded-full text-gray-700 bg-gray-100 dark:bg-gray-700 dark:text-yellow-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-300" aria-label="Toggle dark mode">
-                <!-- Sun Icon (Light Mode) -->
-                <svg id="sun-icon" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="display: none;">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
-                </svg>
-                <!-- Moon Icon (Dark Mode) -->
-                <svg id="moon-icon" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="display: none;">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
-                </svg>
+<body class="p-4 sm:p-8">
+
+    <div id="loading-overlay" class="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center hidden">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-400"></div>
+    </div>
+
+    <div class="max-w-xl mx-auto">
+        <!-- Header and Theme Toggle -->
+        <header class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-teal-400">Zenith Ledger</h1>
+            <button id="theme-toggle" class="text-2xl text-teal-400 p-2 rounded-full hover:bg-teal-700 transition">
+                🌙 <!-- Moon icon for dark mode -->
             </button>
         </header>
 
-        <!-- Current Balance Card -->
-        <div class="card bg-white dark:bg-gray-800 p-6 rounded-2xl mb-6 border-b-4 border-secondary dark:border-primary">
-            <p class="text-gray-500 font-medium mb-1 dark:text-gray-400">Current Balance</p>
-            <h2 id="current-balance" class="text-4xl font-bold text-primary dark:text-white transition-all duration-300">
-                $0.00
-            </h2>
-            <div class="grid grid-cols-2 gap-4 mt-4 text-center">
-                <div class="p-3 rounded-xl bg-green-50/70 border border-green-200 dark:bg-gray-700 dark:border-green-800">
-                    <p class="text-sm text-gray-600 dark:text-gray-300">Income</p>
-                    <p id="total-income" class="font-bold text-income-color text-xl mt-0.5">$0.00</p>
+        <!-- Current Balance Summary -->
+        <div class="card p-6 rounded-xl mb-6">
+            <h2 class="text-xl font-semibold mb-3 text-gray-300">Current Balance</h2>
+            <p id="current-balance" class="text-5xl font-extrabold mb-4 text-white">$0.00</p>
+            <div class="flex space-x-4 text-center">
+                <div class="flex-1 p-3 rounded-lg bg-green-900/50 border border-green-700">
+                    <p class="text-sm text-gray-400">Income</p>
+                    <p id="total-income" class="text-2xl font-bold text-green-400 mt-1">$0.00</p>
                 </div>
-                <div class="p-3 rounded-xl bg-red-50/70 border border-red-200 dark:bg-gray-700 dark:border-red-800">
-                    <p class="text-sm text-gray-600 dark:text-gray-300">Expenses</p>
-                    <p id="total-expense" class="font-bold text-expense-color text-xl mt-0.5">$0.00</p>
+                <div class="flex-1 p-3 rounded-lg bg-red-900/50 border border-red-700">
+                    <p class="text-sm text-gray-400">Expenses</p>
+                    <p id="total-expenses" class="text-2xl font-bold text-red-400 mt-1">$0.00</p>
                 </div>
             </div>
         </div>
+        
+        <!-- User ID Display (Crucial for multi-user apps) -->
+        <div class="bg-blue-900/50 text-blue-300 text-xs p-2 rounded-lg mb-6">
+            <p class="font-medium">User ID: <span id="user-id-display" class="break-words font-mono text-sm text-yellow-300">Authenticating...</span></p>
+        </div>
 
-        <!-- Add Transaction Form -->
-        <div class="card bg-white dark:bg-gray-800 p-5 rounded-2xl mb-6">
-            <h3 class="text-xl font-semibold mb-4 text-gray-700 dark:text-gray-100">Add New Transaction</h3>
-            <form id="transaction-form" class="space-y-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Type</label>
-                    <div class="flex space-x-4">
-                        <label class="flex items-center space-x-2 p-2 rounded-lg border w-1/2 cursor-pointer transition-colors dark:text-gray-100"
-                                id="income-label">
-                            <input type="radio" name="type" value="income" required class="text-income-color focus:ring-income-color" checked>
-                            <span class="font-semibold text-income-color">Income</span>
-                        </label>
-                        <label class="flex items-center space-x-2 p-2 rounded-lg border w-1/2 cursor-pointer transition-colors dark:text-gray-100"
-                                id="expense-label">
-                            <input type="radio" name="type" value="expense" required class="text-expense-color focus:ring-expense-color">
-                            <span class="font-semibold text-expense-color">Expense</span>
-                        </label>
-                    </div>
+
+        <!-- Add New Transaction Form -->
+        <div class="card p-6 rounded-xl mb-6">
+            <h2 class="text-2xl font-semibold mb-4 text-gray-200">Add New Transaction</h2>
+            <form id="transaction-form">
+                
+                <!-- Type Selection (Income/Expense) -->
+                <div class="flex space-x-4 mb-4">
+                    <label class="flex-1 p-3 rounded-lg border cursor-pointer transition" for="type-income" id="label-income">
+                        <input type="radio" id="type-income" name="type" value="Income" checked class="mr-2 text-teal-400 focus:ring-teal-500">
+                        <span class="font-semibold text-green-400">Income</span>
+                    </label>
+                    <label class="flex-1 p-3 rounded-lg border cursor-pointer transition" for="type-expense" id="label-expense">
+                        <input type="radio" id="type-expense" name="type" value="Expense" class="mr-2 text-teal-400 focus:ring-teal-500">
+                        <span class="font-semibold text-red-400">Expense</span>
+                    </label>
                 </div>
 
-                <div>
-                    <label for="description" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
-                    <input type="text" id="description" placeholder="e.g., Groceries, Salary" required
-                           class="mt-1 block w-full rounded-lg border-gray-300 dark:border-gray-600 shadow-sm focus:border-primary focus:ring-primary p-2.5 transition dark:bg-gray-700 dark:text-gray-100">
+                <!-- Description -->
+                <div class="mb-4">
+                    <label for="description" class="block text-sm font-medium mb-1 text-gray-300">Description</label>
+                    <input type="text" id="description" placeholder="E.g., Salary, Groceries, Rent" required class="w-full p-3 rounded-lg bg-[#3a3a5a] border border-[#5a5a8a] focus:ring-teal-400 focus:border-teal-400 text-white">
                 </div>
-                <div class="flex space-x-4">
-                    <div class="w-1/2">
-                        <label for="amount" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Amount ($)</label>
-                        <input type="number" id="amount" placeholder="0.00" step="0.01" min="0.01" required
-                               class="mt-1 block w-full rounded-lg border-gray-300 dark:border-gray-600 shadow-sm focus:border-primary focus:ring-primary p-2.5 transition dark:bg-gray-700 dark:text-gray-100">
+
+                <!-- Amount and Category -->
+                <div class="flex space-x-4 mb-6">
+                    <div class="flex-1">
+                        <label for="amount" class="block text-sm font-medium mb-1 text-gray-300">Amount ($)</label>
+                        <input type="number" id="amount" placeholder="55.00" required min="0.01" step="0.01" class="w-full p-3 rounded-lg bg-[#3a3a5a] border border-[#5a5a8a] focus:ring-teal-400 focus:border-teal-400 text-white">
                     </div>
-                    <div class="w-1/2">
-                        <label for="category" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
-                        <select id="category" required
-                                class="mt-1 block w-full rounded-lg border-gray-300 dark:border-gray-600 shadow-sm focus:border-primary focus:ring-primary p-2.5 transition bg-white dark:bg-gray-700 dark:text-gray-100">
-                            <option value="" class="bg-white dark:bg-gray-700">Select Category</option>
-                            <!-- Options inherit dark mode colors better when defined in CSS, but explicit options are better for visibility -->
-                            <option value="Food & Dining" class="bg-white dark:bg-gray-700">Food & Dining</option>
-                            <option value="Housing & Rent" class="bg-white dark:bg-gray-700">Housing & Rent</option>
-                            <option value="Transportation" class="bg-white dark:bg-gray-700">Transportation</option>
-                            <option value="Utilities" class="bg-white dark:bg-gray-700">Utilities</option>
-                            <option value="Shopping" class="bg-white dark:bg-gray-700">Shopping</option>
-                            <option value="Salary" class="bg-white dark:bg-gray-700">Salary</option>
-                            <option value="Freelance" class="bg-white dark:bg-gray-700">Freelance</option>
-                            <option value="Investment" class="bg-white dark:bg-gray-700">Investment</option>
-                            <option value="Other" class="bg-white dark:bg-gray-700">Other</option>
+                    <div class="flex-1">
+                        <label for="category" class="block text-sm font-medium mb-1 text-gray-300">Category</label>
+                        <select id="category" required class="w-full p-3 rounded-lg bg-[#3a3a5a] border border-[#5a5a8a] focus:ring-teal-400 focus:border-teal-400 text-white appearance-none pr-8">
+                            <option value="" disabled selected>Select Category</option>
+                            <option value="Salary">Salary</option>
+                            <option value="Investment">Investment</option>
+                            <option value="Groceries">Groceries</option>
+                            <option value="Rent">Rent</option>
+                            <option value="Transportation">Transportation</option>
+                            <option value="Entertainment">Entertainment</option>
+                            <option value="Other">Other</option>
                         </select>
                     </div>
                 </div>
 
-                <button type="submit"
-                        class="w-full py-3 px-4 border border-transparent rounded-xl shadow-md text-white font-semibold bg-secondary hover:bg-primary transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-secondary dark:bg-primary dark:hover:bg-secondary">
-                    <span id="submit-text">Add Transaction</span>
-                    <span id="loading-spinner" class="hidden inline-block animate-spin rounded-full h-5 w-5 border-b-2 border-white"></span>
+                <button type="submit" class="w-full p-3 bg-teal-600 rounded-xl font-bold text-white hover:bg-teal-700 transition duration-150 shadow-lg shadow-teal-500/50">
+                    Add Transaction
                 </button>
             </form>
         </div>
 
-        <!-- Transaction List -->
-        <div class="card bg-white dark:bg-gray-800 p-5 rounded-2xl">
-            <h3 class="text-xl font-semibold mb-4 text-gray-700 dark:text-gray-100">Recent Transactions</h3>
-            <div id="transaction-list-container" class="max-h-80 overflow-y-auto pr-2">
-                <ul id="transaction-list" class="space-y-3">
-                    <li id="loading-indicator" class="text-center text-gray-500 dark:text-gray-400 p-4">
-                        Loading data...
-                    </li>
-                </ul>
+        <!-- Recent Transactions List -->
+        <div class="card p-6 rounded-xl">
+            <h2 class="text-2xl font-semibold mb-4 text-gray-200">Recent Transactions</h2>
+            <div id="transactions-list" class="scrollable-list space-y-3">
+                <p class="text-center text-gray-500" id="loading-data-message">Loading data...</p>
             </div>
-            <p id="no-transactions" class="text-center text-gray-400 dark:text-gray-600 mt-4 hidden">No transactions recorded yet.</p>
+            <div id="no-transactions-message" class="text-center text-gray-500 mt-4 hidden">
+                <p>No transactions yet. Add your first income or expense!</p>
+            </div>
         </div>
     </div>
 
-    <!-- Firebase SDK Imports (MUST use type="module") -->
+    <!-- Custom Alert/Error Modal -->
+    <div id="modal-container" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden" onclick="closeModal()">
+        <div id="modal-content" class="bg-[#272741] p-6 rounded-xl shadow-2xl max-w-sm w-full mx-4" onclick="event.stopPropagation()">
+            <h3 id="modal-title" class="text-xl font-bold mb-3 text-red-400"></h3>
+            <p id="modal-message" class="text-gray-300 mb-4"></p>
+            <button onclick="closeModal()" class="w-full p-2 bg-teal-600 rounded-lg text-white font-semibold hover:bg-teal-700">OK</button>
+        </div>
+    </div>
+
     <script type="module">
+        // ----------------------------------------------------------------------
+        // 1. FIREBASE SETUP (Updated: Added Firestore and Authentication)
+        // ----------------------------------------------------------------------
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, query, onSnapshot, serverTimestamp, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, addDoc, onSnapshot, collection, query, serverTimestamp, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // This is your unique configuration block copied from the Firebase Console
+        const firebaseConfig = {
+            apiKey: "AIzaSyAyhdCWmVruKIaK8NrncUvcbmEXOh-WG9g", // REPLACE WITH YOUR ACTUAL KEY
+            authDomain: "budget-tracker-8856f.firebaseapp.com",
+            projectId: "budget-tracker-8856f",
+            storageBucket: "budget-tracker-8856f.firebasestorage.app",
+            messagingSenderId: "42597224681",
+            appId: "1:42597224681:web:a12de2d7ad069fb1b32078",
+            measurementId: "G-N88GLHGVFX"
+        };
 
-        // ----------------------------------------------------------------------
-        // 1. GLOBAL STATE & CONFIGURATION
-        // ----------------------------------------------------------------------
-
-        setLogLevel('Debug');
-
-        // Global variables provided by the environment
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-        let db;
-        let auth;
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app); // Get Firestore instance
+        const auth = getAuth(app);     // Get Auth instance
+        
+        const appId = firebaseConfig.projectId; // Using project ID as a default appId
         let userId = null;
         let isAuthReady = false;
 
-        // UI Elements
-        const form = document.getElementById('transaction-form');
-        const transactionList = document.getElementById('transaction-list');
-        const balanceEl = document.getElementById('current-balance');
-        const incomeTotalEl = document.getElementById('total-income');
-        const expenseTotalEl = document.getElementById('total-expense');
-        const userInfoEl = document.getElementById('user-info');
-        const loadingIndicator = document.getElementById('loading-indicator');
-        const noTransactionsMsg = document.getElementById('no-transactions');
-        const submitText = document.getElementById('submit-text');
-        const loadingSpinner = document.getElementById('loading-spinner');
-        const incomeLabel = document.getElementById('income-label');
-        const expenseLabel = document.getElementById('expense-label');
-        const themeToggle = document.getElementById('theme-toggle');
-        const sunIcon = document.getElementById('sun-icon');
-        const moonIcon = document.getElementById('moon-icon');
+        // ----------------------------------------------------------------------
+        // 2. AUTHENTICATION & INITIALIZATION
+        // ----------------------------------------------------------------------
 
-        // Helper for currency formatting
-        const formatter = new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: 'USD',
+        // Global function to display custom modal instead of alert()
+        function showModal(title, message, isError = true) {
+            const modalTitle = document.getElementById('modal-title');
+            const modalContent = document.getElementById('modal-content');
+            
+            modalTitle.textContent = title;
+            document.getElementById('modal-message').textContent = message;
+            
+            if (isError) {
+                modalTitle.classList.remove('text-green-400');
+                modalTitle.classList.add('text-red-400');
+            } else {
+                modalTitle.classList.remove('text-red-400');
+                modalTitle.classList.add('text-green-400');
+            }
+            document.getElementById('modal-container').classList.remove('hidden');
+        }
+
+        window.closeModal = function() {
+            document.getElementById('modal-container').classList.add('hidden');
+        }
+
+        // Authentication Listener: Sets up userId and starts data listener
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                // User is signed in (anonymously in this case)
+                userId = user.uid;
+                document.getElementById('user-id-display').textContent = userId;
+                isAuthReady = true;
+                listenForTransactions(); // Start listening for data now that we have the userId
+            } else {
+                // User is signed out, sign in anonymously
+                signInAnonymously(auth)
+                    .catch((error) => {
+                        console.error("Anonymous sign-in failed:", error);
+                        showModal("Authentication Error", "Could not sign in to the database. Check Firebase setup.", true);
+                        document.getElementById('loading-data-message').textContent = "Authentication Failed.";
+                    });
+            }
         });
 
         // ----------------------------------------------------------------------
-        // 2. DARK MODE LOGIC
+        // 3. DATABASE FUNCTIONS
         // ----------------------------------------------------------------------
 
-        /**
-         * Applies the correct theme class and updates the icon.
-         */
-        function updateThemeUI(isDark) {
-            if (isDark) {
-                document.documentElement.classList.add('dark');
-                moonIcon.style.display = 'block';
-                sunIcon.style.display = 'none';
-            } else {
-                document.documentElement.classList.remove('dark');
-                moonIcon.style.display = 'none';
-                sunIcon.style.display = 'block';
+        function getTransactionCollectionRef() {
+            // Path: /artifacts/{appId}/users/{userId}/transactions
+            if (!userId) {
+                console.error("Cannot get collection ref: User ID is null.");
+                return null;
             }
+            return collection(db, `artifacts/${appId}/users/${userId}/transactions`);
         }
 
-        /**
-         * Toggles the dark mode state and saves preference.
-         */
-        function toggleDarkMode() {
-            const isDark = document.documentElement.classList.contains('dark');
-            const newMode = !isDark;
-            localStorage.setItem('theme', newMode ? 'dark' : 'light');
-            updateThemeUI(newMode);
-        }
+        // Add a new transaction to Firestore
+        async function addTransaction(data) {
+            const transactionsRef = getTransactionCollectionRef();
+            if (!transactionsRef) return;
+            
+            const loadingOverlay = document.getElementById('loading-overlay');
+            loadingOverlay.classList.remove('hidden');
 
-        /**
-         * Initializes the theme based on localStorage or system preference.
-         */
-        function initializeTheme() {
-            const storedTheme = localStorage.getItem('theme');
-            let isDark = false;
-
-            if (storedTheme) {
-                isDark = storedTheme === 'dark';
-            } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-                // Check system preference only if no stored theme
-                isDark = true;
-            }
-
-            updateThemeUI(isDark);
-            themeToggle.addEventListener('click', toggleDarkMode);
-        }
-
-        // ----------------------------------------------------------------------
-        // 3. FIREBASE INITIALIZATION & AUTHENTICATION
-        // ----------------------------------------------------------------------
-
-        function initFirebase() {
             try {
-                if (!firebaseConfig) {
-                    console.error("Firebase config is missing.");
-                    return;
-                }
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        userId = user.uid;
-                        userInfoEl.textContent = `User ID: ${userId.substring(0, 8)}... (Real-time data enabled)`;
-                    } else {
-                        console.warn("User logged out or failed to authenticate.");
-                        userId = 'anonymous'; // Fallback
-                        userInfoEl.textContent = `User ID: Anonymous (Data saved locally)`;
-                    }
-                    isAuthReady = true;
-                    // Start listening for data only after auth state is determined
-                    setupRealtimeListener();
+                await addDoc(transactionsRef, {
+                    ...data,
+                    timestamp: serverTimestamp() // Adds server-side timestamp
                 });
-
-                // Authenticate using the provided token or anonymously
-                if (initialAuthToken) {
-                    signInWithCustomToken(auth, initialAuthToken).catch(error => {
-                        console.error("Error signing in with custom token:", error);
-                        signInAnonymously(auth);
-                    });
-                } else {
-                    signInAnonymously(auth);
-                }
-
-                // Add active state styles to radio buttons
-                const updateTypeStyles = () => {
-                    const type = document.querySelector('input[name="type"]:checked').value;
-                    if (type === 'income') {
-                        incomeLabel.classList.add('bg-green-50', 'border-income-color', 'dark:bg-gray-700', 'dark:border-income-color');
-                        expenseLabel.classList.remove('bg-red-50', 'border-expense-color', 'dark:bg-gray-700', 'dark:border-expense-color');
-                    } else {
-                        expenseLabel.classList.add('bg-red-50', 'border-expense-color', 'dark:bg-gray-700', 'dark:border-expense-color');
-                        incomeLabel.classList.remove('bg-green-50', 'border-income-color', 'dark:bg-gray-700', 'dark:border-income-color');
-                    }
-                };
-
-                updateTypeStyles(); // Initial call
-                document.querySelectorAll('input[name="type"]').forEach(input => {
-                    input.addEventListener('change', updateTypeStyles);
-                });
-
+                showModal("Success!", "Transaction saved successfully.", false);
             } catch (error) {
-                console.error("Error initializing Firebase:", error);
-                userInfoEl.textContent = "Error: Cannot connect to database.";
+                console.error("Error adding transaction: ", error);
+                showModal("Database Error", `Failed to save transaction: ${error.message}`, true);
+            } finally {
+                loadingOverlay.classList.add('hidden');
             }
         }
 
-        // ----------------------------------------------------------------------
-        // 4. FIRESTORE OPERATIONS
-        // ----------------------------------------------------------------------
+        // Delete a transaction from Firestore
+        async function deleteTransaction(id) {
+            if (!userId) {
+                console.error("Cannot delete transaction: User ID is null.");
+                return;
+            }
+            
+            const transactionDocRef = doc(db, `artifacts/${appId}/users/${userId}/transactions`, id);
 
-        /**
-         * Generates the correct Firestore collection path.
-         */
-        const getCollectionPath = () => {
-            return `artifacts/${appId}/users/${userId}/transactions`;
-        };
+            try {
+                await deleteDoc(transactionDocRef);
+                // Success is handled by the onSnapshot listener
+            } catch (error) {
+                console.error("Error deleting document: ", error);
+                showModal("Deletion Error", `Failed to delete transaction: ${error.message}`, true);
+            }
+        }
 
-        /**
-         * Sets up the real-time listener for transactions.
-         */
-        function setupRealtimeListener() {
-            if (!db || !userId) return;
-
-            const transactionsCollection = collection(db, getCollectionPath());
-            const q = query(transactionsCollection);
+        // Listen for real-time updates from Firestore (Replaces "Loading Data...")
+        function listenForTransactions() {
+            if (!isAuthReady) return; // Wait until user is authenticated
+            
+            const transactionsRef = getTransactionCollectionRef();
+            if (!transactionsRef) {
+                document.getElementById('loading-data-message').textContent = "Database connection error.";
+                return;
+            }
+            
+            const q = query(transactionsRef);
 
             onSnapshot(q, (snapshot) => {
-                loadingIndicator.classList.add('hidden');
-                let transactions = [];
-                let totalIncome = 0;
-                let totalExpense = 0;
-
-                snapshot.forEach((doc) => {
-                    const data = doc.data();
-                    const amount = parseFloat(data.amount);
-
+                const transactions = [];
+                snapshot.forEach(doc => {
+                    // Use a fallback for timestamp if not yet set by server
+                    const timestamp = doc.data().timestamp ? doc.data().timestamp.toDate() : new Date();
                     transactions.push({
                         id: doc.id,
-                        ...data,
-                        timestamp: data.timestamp ? data.timestamp.toDate() : new Date(),
-                        amount: amount
+                        ...doc.data(),
+                        timestamp: timestamp
                     });
-
-                    if (data.type === 'income') {
-                        totalIncome += amount;
-                    } else if (data.type === 'expense') {
-                        totalExpense += amount;
-                    }
                 });
 
-                // Sort transactions locally by timestamp descending
+                // Sort by timestamp descending (newest first)
                 transactions.sort((a, b) => b.timestamp - a.timestamp);
 
-                const currentBalance = totalIncome - totalExpense;
+                renderTransactions(transactions);
+                updateSummary(transactions);
 
-                updateUI(transactions, currentBalance, totalIncome, totalExpense);
+                // Hide loading/show no transactions message
+                document.getElementById('loading-data-message').classList.add('hidden');
+                if (transactions.length === 0) {
+                    document.getElementById('no-transactions-message').classList.remove('hidden');
+                } else {
+                    document.getElementById('no-transactions-message').classList.add('hidden');
+                }
             }, (error) => {
-                console.error("Error getting real-time transactions:", error);
-                loadingIndicator.textContent = "Error loading data.";
+                console.error("Firestore listen error: ", error);
+                document.getElementById('loading-data-message').textContent = `Data load failed: ${error.message}`;
+                showModal("Data Error", "Could not load transactions. Check your Firebase rules and connection.", true);
             });
         }
 
+        // ----------------------------------------------------------------------
+        // 4. UI LOGIC
+        // ----------------------------------------------------------------------
+        
+        const formatCurrency = (amount) => {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD'
+            }).format(amount);
+        };
 
-        /**
-         * Saves a new transaction to Firestore.
-         */
-        async function saveTransaction(data) {
-            if (!db || !userId) {
-                console.error("Database or user ID not available for saving.");
-                return;
-            }
+        // Renders the list of transactions
+        function renderTransactions(transactions) {
+            const listEl = document.getElementById('transactions-list');
+            listEl.innerHTML = ''; // Clear existing list
 
-            try {
-                // Disable button and show spinner
-                form.querySelector('button[type="submit"]').disabled = true;
-                submitText.classList.add('hidden');
-                loadingSpinner.classList.remove('hidden');
+            transactions.forEach(transaction => {
+                const isIncome = transaction.type === 'Income';
+                const sign = isIncome ? '+' : '-';
+                const color = isIncome ? 'text-green-400' : 'text-red-400';
+                const borderColor = isIncome ? 'border-green-600' : 'border-red-600';
 
-                const transactionsCollection = collection(db, getCollectionPath());
+                const transactionEl = document.createElement('div');
+                transactionEl.className = `flex justify-between items-center p-4 rounded-xl card border-l-4 ${borderColor}`;
+                transactionEl.innerHTML = `
+                    <div class="flex-1">
+                        <p class="font-semibold text-white">${transaction.description}</p>
+                        <p class="text-xs text-gray-400 mt-1">${transaction.category} • ${transaction.timestamp.toLocaleDateString()}</p>
+                    </div>
+                    <div class="text-right flex items-center space-x-3">
+                        <p class="font-bold text-lg ${color}">${sign}${formatCurrency(transaction.amount)}</p>
+                        <button class="delete-btn text-gray-500 hover:text-red-400 transition" data-id="${transaction.id}">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash-2">
+                                <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                            </svg>
+                        </button>
+                    </div>
+                `;
+                listEl.appendChild(transactionEl);
+            });
 
-                await addDoc(transactionsCollection, {
-                    ...data,
-                    timestamp: serverTimestamp()
+            // Add event listeners for delete buttons
+            listEl.querySelectorAll('.delete-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const transactionId = e.currentTarget.getAttribute('data-id');
+                    deleteTransaction(transactionId);
                 });
-
-                // Reset form and UI state
-                form.reset();
-                form.querySelector('input[type="radio"][value="income"]').checked = true; // Reset type
-                
-                // Manually re-apply initial styles after reset
-                document.getElementById('income-label').classList.add('bg-green-50', 'border-income-color', 'dark:bg-gray-700', 'dark:border-income-color');
-                document.getElementById('expense-label').classList.remove('bg-red-50', 'border-expense-color', 'dark:bg-gray-700', 'dark:border-expense-color');
-
-                // Re-enable button and hide spinner
-                form.querySelector('button[type="submit"]').disabled = false;
-                submitText.classList.remove('hidden');
-                loadingSpinner.classList.add('hidden');
-
-            } catch (e) {
-                console.error("Error adding document: ", e);
-                // Re-enable button on error
-                form.querySelector('button[type="submit"]').disabled = false;
-                submitText.classList.remove('hidden');
-                loadingSpinner.classList.add('hidden');
-            }
+            });
         }
 
-        // ----------------------------------------------------------------------
-        // 5. UI RENDERING & EVENT HANDLERS
-        // ----------------------------------------------------------------------
-
-        /**
-         * Updates the main UI elements with the latest data.
-         */
-        function updateUI(transactions, balance, income, expense) {
-            // Update Balance Cards
-            balanceEl.textContent = formatter.format(balance);
-            balanceEl.classList.toggle('text-expense-color', balance < 0);
-            balanceEl.classList.toggle('text-primary', balance >= 0);
-
-            incomeTotalEl.textContent = formatter.format(income);
-            expenseTotalEl.textContent = formatter.format(expense);
-
-            // Update Transaction List
-            transactionList.innerHTML = ''; // Clear existing list
-
-            if (transactions.length === 0) {
-                noTransactionsMsg.classList.remove('hidden');
-            } else {
-                noTransactionsMsg.classList.add('hidden');
-                transactions.forEach(transaction => {
-                    const listItem = createTransactionItem(transaction);
-                    transactionList.appendChild(listItem);
-                });
-            }
-        }
-
-        /**
-         * Creates a single list item element for a transaction.
-         */
-        function createTransactionItem(transaction) {
-            const isExpense = transaction.type === 'expense';
-            const sign = isExpense ? '-' : '+';
-            const amountText = formatter.format(transaction.amount);
-            const colorClass = isExpense ? 'text-expense-color' : 'text-income-color';
-            const dateString = transaction.timestamp ? new Date(transaction.timestamp).toLocaleDateString() : 'Processing...';
-
-            const li = document.createElement('li');
-            li.className = 'flex justify-between items-center p-3 rounded-xl border-l-4 transition-all duration-200 hover:shadow-md';
+        // Updates the total income, expenses, and current balance
+        function updateSummary(transactions) {
+            const totalIncome = transactions
+                .filter(t => t.type === 'Income')
+                .reduce((sum, t) => sum + parseFloat(t.amount), 0);
             
-            // Apply light/dark mode specific classes for the transaction item background/border
-            li.classList.add('bg-gray-50', 'dark:bg-gray-700', 'dark:hover:bg-gray-600');
-            li.classList.add(isExpense ? 'border-expense-color/70' : 'border-income-color/70');
+            const totalExpenses = transactions
+                .filter(t => t.type === 'Expense')
+                .reduce((sum, t) => sum + parseFloat(t.amount), 0);
 
-            li.innerHTML = `
-                <div class="flex flex-col flex-grow min-w-0">
-                    <span class="font-medium text-gray-800 dark:text-gray-100 truncate">${transaction.description}</span>
-                    <span class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">${transaction.category} • ${dateString}</span>
-                </div>
-                <div class="flex-shrink-0 ml-4 text-right">
-                    <span class="font-bold text-lg ${colorClass}">
-                        ${sign}${amountText}
-                    </span>
-                </div>
-            `;
-            return li;
+            const currentBalance = totalIncome - totalExpenses;
+
+            document.getElementById('total-income').textContent = formatCurrency(totalIncome);
+            document.getElementById('total-expenses').textContent = formatCurrency(totalExpenses);
+            document.getElementById('current-balance').textContent = formatCurrency(currentBalance);
         }
 
-        /**
-         * Handles form submission.
-         */
-        form.addEventListener('submit', (e) => {
+        // Handle form submission
+        document.getElementById('transaction-form').addEventListener('submit', (e) => {
             e.preventDefault();
 
-            if (!isAuthReady) {
-                console.warn("Authentication not ready. Please wait.");
+            const type = document.querySelector('input[name="type"]:checked').value;
+            const description = document.getElementById('description').value.trim();
+            const amount = parseFloat(document.getElementById('amount').value);
+            const category = document.getElementById('category').value;
+
+            if (description === '' || isNaN(amount) || amount <= 0 || category === '') {
+                showModal("Input Error", "Please ensure all fields are filled correctly and the amount is positive.", true);
                 return;
             }
 
-            const formData = new FormData(form);
-            const data = {
-                type: formData.get('type'),
-                description: formData.get('description').trim(),
-                amount: parseFloat(formData.get('amount')), // already a number from input type="number"
-                category: formData.get('category')
+            const newTransaction = {
+                type,
+                description,
+                amount,
+                category
             };
 
-            if (data.amount <= 0 || !data.description || !data.category) {
-                console.error("Invalid input data.");
-                return;
-            }
-
-            saveTransaction(data);
+            addTransaction(newTransaction);
+            e.target.reset(); // Clear form
+        });
+        
+        // Theme toggle logic
+        document.getElementById('theme-toggle').addEventListener('click', () => {
+            showModal("Feature Not Implemented", "The theme toggle is currently decorative. The app is set to dark mode permanently.", false);
         });
 
-        // ----------------------------------------------------------------------
-        // 6. START APPLICATION
-        // ----------------------------------------------------------------------
-        window.onload = () => {
-            initializeTheme();
-            initFirebase();
-        }
+        // Initial styling for radio buttons
+        const incomeLabel = document.getElementById('label-income');
+        const expenseLabel = document.getElementById('label-expense');
+        const incomeRadio = document.getElementById('type-income');
+        const expenseRadio = document.getElementById('type-expense');
 
+        const updateRadioStyles = () => {
+            if (incomeRadio.checked) {
+                incomeLabel.className = 'flex-1 p-3 rounded-lg border-2 border-green-500 bg-green-900/20 cursor-pointer transition';
+                expenseLabel.className = 'flex-1 p-3 rounded-lg border border-[#5a5a8a] cursor-pointer transition';
+            } else {
+                incomeLabel.className = 'flex-1 p-3 rounded-lg border border-[#5a5a8a] cursor-pointer transition';
+                expenseLabel.className = 'flex-1 p-3 rounded-lg border-2 border-red-500 bg-red-900/20 cursor-pointer transition';
+            }
+        };
+
+        incomeRadio.addEventListener('change', updateRadioStyles);
+        expenseRadio.addEventListener('change', updateRadioStyles);
+        updateRadioStyles(); // Initial call
+        
     </script>
 </body>
 </html>
