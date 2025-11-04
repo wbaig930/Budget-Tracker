@@ -1,557 +1,499 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { PieChart, Pie, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend } from 'recharts';
-import { Home, TrendingUp, TrendingDown, Clock, Layers, DollarSign, Plus, X } from 'lucide-react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, query, onSnapshot, addDoc } from 'firebase/firestore';
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Budget Tracker</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Use Inter font -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
 
-// --- Global Configuration ---
-const CATEGORY_COLORS = {
-  Food: '#FF8042', 
-  Rent: '#0088FE', 
-  Salary: '#00C49F', 
-  Shopping: '#FFBB28', 
-  Transport: '#8884d8', 
-  Utilities: '#E91E63', 
-  Investment: '#2196F3', 
-  Misc: '#6B7280', // Default color for new categories
-};
-const ALL_CATEGORIES = ['Food', 'Rent', 'Shopping', 'Transport', 'Utilities', 'Investment', 'Salary', 'Misc'];
-
-// Helper to safely access global variables
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-// --- Utility Components ---
-
-const formatCurrency = (amount) => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-  }).format(amount);
-};
-
-const StatsCard = ({ title, value, icon: Icon, colorClass }) => (
-  <div className="flex flex-col p-5 bg-gray-800 rounded-xl shadow-lg transition duration-300 hover:ring-2 hover:ring-indigo-500/50">
-    <div className="flex items-center justify-between">
-      <p className="text-sm font-medium text-gray-400 uppercase">{title}</p>
-      <Icon className={`w-5 h-5 ${colorClass}`} />
-    </div>
-    <div className="mt-1 text-2xl font-bold text-gray-100">
-      {formatCurrency(value)}
-    </div>
-  </div>
-);
-
-const CustomTooltip = ({ active, payload, label }) => {
-  if (active && payload && payload.length) {
-    const data = payload[0].payload;
-    const isBarChart = data.month;
-    const value = isBarChart ? payload[0].value : data.value;
-    const name = isBarChart ? payload[0].dataKey : data.name;
-
-    return (
-      <div className="p-3 bg-gray-700/90 backdrop-blur-sm border border-gray-600 rounded-lg shadow-xl text-gray-100 text-sm">
-        {isBarChart ? (
-          <>
-            <p className="font-bold mb-1">{label}</p>
-            <p className={`text-sm ${name === 'income' ? 'text-green-400' : 'text-red-400'}`}>
-              {name.charAt(0).toUpperCase() + name.slice(1)}: {formatCurrency(value)}
-            </p>
-          </>
-        ) : (
-          <>
-            <p className="font-bold mb-1">{name}</p>
-            <p className="text-sm text-white">Amount: {formatCurrency(value)}</p>
-          </>
-        )}
-      </div>
-    );
-  }
-  return null;
-};
-
-// --- Transaction Components ---
-
-const TransactionList = ({ transactions, isLoading }) => (
-  <div className="bg-gray-800 p-6 rounded-xl h-full flex flex-col min-h-[300px]">
-    <h2 className="text-xl font-semibold mb-4 text-gray-100 border-b border-gray-700/50 pb-2 flex items-center">
-      <Clock className="w-5 h-5 mr-2 text-indigo-400" /> Recent Transactions
-    </h2>
-    {isLoading ? (
-      <div className="flex-grow flex items-center justify-center text-gray-400">Loading transactions...</div>
-    ) : transactions.length === 0 ? (
-      <div className="flex-grow flex items-center justify-center text-gray-500 italic">No transactions recorded yet. Add one to see your ledger!</div>
-    ) : (
-      <div className="space-y-3 overflow-y-auto custom-scrollbar pr-2">
-        {transactions.map(t => {
-          const isIncome = t.type === 'Income';
-          const amountClass = isIncome ? 'text-green-400' : 'text-red-400';
-          const categoryColor = CATEGORY_COLORS[t.category] || CATEGORY_COLORS.Misc;
-
-          return (
-            <div
-              key={t.id}
-              className="flex justify-between items-center p-3 rounded-lg hover:bg-gray-700 transition duration-150 border border-gray-700/50"
-            >
-              <div className="flex items-center">
-                <span 
-                  className="w-2 h-2 rounded-full mr-3"
-                  style={{ backgroundColor: categoryColor }}
-                ></span>
-                <div>
-                  <p className="text-gray-100 font-medium">{t.description}</p>
-                  <p className="text-xs text-gray-400">{t.category} &bull; {t.date}</p>
-                </div>
-              </div>
-              <p className={`font-bold text-lg ${amountClass}`}>
-                {isIncome ? '+' : '-'} {formatCurrency(t.amount)}
-              </p>
-            </div>
-          );
-        })}
-      </div>
-    )}
-  </div>
-);
-
-// --- Chart Components ---
-
-const PieChartComponent = ({ data }) => (
-  <div className="bg-gray-800 p-6 rounded-xl flex flex-col h-full">
-    <h2 className="text-xl font-semibold mb-4 text-gray-100 border-b border-gray-700/50 pb-2 flex items-center">
-      <Layers className="w-5 h-5 mr-2 text-indigo-400" /> Expense Breakdown (All Time)
-    </h2>
-    <div className='flex-grow min-h-[250px]'>
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Pie
-            data={data}
-            dataKey="value"
-            nameKey="name"
-            cx="50%"
-            cy="50%"
-            outerRadius={80}
-            fill="#8884d8"
-            labelLine={false}
-            stroke="#1F2937" 
-            label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
-          >
-            {data.map((entry, index) => (
-              <Cell key={`cell-${index}`} fill={CATEGORY_COLORS[entry.name] || CATEGORY_COLORS.Misc} />
-            ))}
-          </Pie>
-          <Tooltip content={<CustomTooltip />} />
-          <Legend 
-            wrapperStyle={{ paddingTop: '10px' }}
-            formatter={(value) => <span className="text-gray-300 text-sm">{value}</span>}
-          />
-        </PieChart>
-      </ResponsiveContainer>
-    </div>
-  </div>
-);
-
-const BarChartComponent = ({ data }) => (
-  <div className="bg-gray-800 p-6 rounded-xl col-span-1 lg:col-span-2">
-    <h2 className="text-xl font-semibold mb-6 text-gray-100 border-b border-gray-700/50 pb-2 flex items-center">
-      <DollarSign className="w-5 h-5 mr-2 text-indigo-400" /> Monthly Cash Flow
-    </h2>
-    <div className='h-72'>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart
-          data={data}
-          margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-        >
-          <XAxis dataKey="month" stroke="#4B5563" className="text-xs" />
-          <YAxis stroke="#4B5563" className="text-xs" tickFormatter={val => `$${val / 1000}k`} />
-          <Tooltip content={<CustomTooltip />} />
-          <Legend formatter={(value) => <span className="text-gray-300 text-sm">{value.toUpperCase()}</span>} />
-          
-          <Bar dataKey="income" fill={CATEGORY_COLORS.Salary} name="Income" radius={[10, 10, 0, 0]} />
-          <Bar dataKey="expense" fill={CATEGORY_COLORS.Transport} name="Expense" radius={[10, 10, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  </div>
-);
-
-// --- New Transaction Modal ---
-
-const AddTransactionModal = ({ isVisible, onClose, db, userId }) => {
-  const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('Food');
-  const [type, setType] = useState('Expense');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!amount || !description || !category || !type) {
-      setError('All fields are required.');
-      return;
-    }
-    if (isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
-      setError('Please enter a valid amount.');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    const transaction = {
-      amount: parseFloat(amount),
-      description,
-      category,
-      type,
-      date: new Date().toISOString().substring(0, 10), // YYYY-MM-DD format
-      createdAt: new Date(),
-    };
-
-    const path = `/artifacts/${appId}/users/${userId}/transactions`;
-    try {
-      await addDoc(collection(db, path), transaction);
-      // Reset form on success
-      setAmount('');
-      setDescription('');
-      setCategory('Food');
-      setType('Expense');
-      onClose();
-    } catch (err) {
-      console.error("Error adding document: ", err);
-      setError('Failed to save transaction. Check console for details.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (!isVisible) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
-      <div className="bg-gray-800 p-6 rounded-xl shadow-2xl w-full max-w-md border border-indigo-700/50">
-        <div className="flex justify-between items-center mb-4 border-b border-gray-700 pb-2">
-          <h3 className="text-2xl font-bold text-gray-100">Add New Transaction</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-100 p-1 rounded-full transition">
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-        
-        <form onSubmit={handleSubmit} className="space-y-4">
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1">Type</label>
-            <div className="flex space-x-4">
-              <button
-                type="button"
-                onClick={() => setType('Income')}
-                className={`flex-1 py-2 rounded-lg font-semibold transition ${type === 'Income' 
-                  ? 'bg-green-600 text-white shadow-lg' 
-                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
-              >
-                Income
-              </button>
-              <button
-                type="button"
-                onClick={() => setType('Expense')}
-                className={`flex-1 py-2 rounded-lg font-semibold transition ${type === 'Expense' 
-                  ? 'bg-red-600 text-white shadow-lg' 
-                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
-              >
-                Expense
-              </button>
-            </div>
-          </div>
-          
-          <div>
-            <label htmlFor="amount" className="block text-sm font-medium text-gray-400 mb-1">Amount ($)</label>
-            <input
-              id="amount"
-              type="number"
-              step="0.01"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:ring-indigo-500 focus:border-indigo-500"
-              placeholder="e.g., 150.00"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="description" className="block text-sm font-medium text-gray-400 mb-1">Description</label>
-            <input
-              id="description"
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:ring-indigo-500 focus:border-indigo-500"
-              placeholder="e.g., Monthly Rent"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="category" className="block text-sm font-medium text-gray-400 mb-1">Category</label>
-            <select
-              id="category"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:ring-indigo-500 focus:border-indigo-500"
-            >
-              {ALL_CATEGORIES.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
-          </div>
-
-          {error && <p className="text-red-400 text-sm">{error}</p>}
-          
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-indigo-600 text-white py-2 rounded-lg font-semibold hover:bg-indigo-700 transition duration-200 disabled:opacity-50 flex items-center justify-center"
-          >
-            {loading ? 'Saving...' : 'Save Transaction'}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-};
-
-// --- Main Application Component ---
-
-const App = () => {
-  const [db, setDb] = useState(null);
-  const [auth, setAuth] = useState(null);
-  const [userId, setUserId] = useState(null);
-  const [transactions, setTransactions] = useState([]);
-  const [isAuthReady, setIsAuthReady] = useState(false);
-  const [showModal, setShowModal] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-
-  // 1. Firebase Initialization and Authentication
-  useEffect(() => {
-    if (!Object.keys(firebaseConfig).length) {
-        console.error("Firebase configuration is missing.");
-        setIsAuthReady(true);
-        setIsLoading(false);
-        return;
-    }
-
-    try {
-      const app = initializeApp(firebaseConfig);
-      const firestore = getFirestore(app);
-      const firebaseAuth = getAuth(app);
-      setDb(firestore);
-      setAuth(firebaseAuth);
-
-      const unsubscribeAuth = onAuthStateChanged(firebaseAuth, async (user) => {
-        if (user) {
-          setUserId(user.uid);
-          setIsAuthReady(true);
-        } else {
-          try {
-            if (initialAuthToken) {
-              await signInWithCustomToken(firebaseAuth, initialAuthToken);
-            } else {
-              const anonUser = await signInAnonymously(firebaseAuth);
-              setUserId(anonUser.user.uid);
-            }
-          } catch (e) {
-            console.error("Authentication failed:", e);
-            // Fallback for environments where auth fails but we want a random ID for private path
-            setUserId(crypto.randomUUID()); 
-          }
-          setIsAuthReady(true);
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a1a2e; /* Dark theme background */
+            color: #ffffff;
+            min-height: 100vh;
         }
-      });
-      return () => unsubscribeAuth();
-    } catch (e) {
-      console.error("Firebase initialization failed:", e);
-      setIsAuthReady(true);
-      setIsLoading(false);
-    }
-  }, []);
 
-  // 2. Real-time Data Fetching (onSnapshot)
-  useEffect(() => {
-    if (!db || !isAuthReady || !userId) return;
+        .card {
+            background-color: #272741;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
 
-    const collectionPath = `/artifacts/${appId}/users/${userId}/transactions`;
-    const q = query(collection(db, collectionPath));
-    
-    // Attaching the real-time listener
-    const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
-      const fetchedTransactions = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        // Ensure date is a string for consistent memoization and sorting
-        date: doc.data().date instanceof Date ? doc.data().date.toISOString().substring(0, 10) : doc.data().date,
-      }));
-      // Sort by date descending for the list
-      fetchedTransactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      
-      setTransactions(fetchedTransactions);
-      setIsLoading(false);
-    }, (error) => {
-      console.error("Error fetching transactions:", error);
-      setIsLoading(false);
-    });
+        .scrollable-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8">
 
-    return () => unsubscribeSnapshot();
-  }, [db, isAuthReady, userId]);
-
-  // 3. Data Aggregation (Monthly Ledger & Breakdown)
-  const { totalBalance, totalIncome, totalExpenses, expenseBreakdown, monthlyFlow } = useMemo(() => {
-    const monthlySummary = {};
-    const expenseCategories = {};
-    let totalIncome = 0;
-    let totalExpenses = 0;
-
-    if (!transactions.length) {
-        return { totalBalance: 0, totalIncome: 0, totalExpenses: 0, expenseBreakdown: [], monthlyFlow: [] };
-    }
-
-    const getMonthYearKey = (dateString) => dateString ? dateString.substring(0, 7) : 'Unknown';
-    const getShortMonthName = (dateString) => new Date(dateString).toLocaleString('en-US', { month: 'short' });
-
-    transactions.forEach(t => {
-      const monthKey = getMonthYearKey(t.date);
-
-      // 1. Calculate Monthly Summary (Bar Chart Data)
-      if (!monthlySummary[monthKey]) {
-        monthlySummary[monthKey] = { income: 0, expense: 0, month: getShortMonthName(t.date), sortKey: monthKey };
-      }
-
-      if (t.type === 'Income') {
-        monthlySummary[monthKey].income += t.amount;
-        totalIncome += t.amount;
-      } else {
-        monthlySummary[monthKey].expense += t.amount;
-        totalExpenses += t.amount;
-
-        // 2. Calculate Expense Breakdown (Pie Chart Data - All Time)
-        expenseCategories[t.category] = (expenseCategories[t.category] || 0) + t.amount;
-      }
-    });
-
-    // Format and sort monthly flow data
-    const monthlyFlowData = Object.values(monthlySummary).map(item => ({
-        month: item.month,
-        income: item.income,
-        expense: item.expense,
-        sortKey: item.sortKey,
-    }));
-    // Sort chronologically by YYYY-MM key
-    monthlyFlowData.sort((a, b) => (a.sortKey > b.sortKey) ? 1 : -1);
-
-
-    // Format expense breakdown data
-    const breakdown = Object.keys(expenseCategories).map(category => ({
-      name: category,
-      value: expenseCategories[category],
-    })).filter(item => item.value > 0); // Only include categories with value
-
-    return {
-      totalBalance: totalIncome - totalExpenses,
-      totalIncome,
-      totalExpenses,
-      expenseBreakdown: breakdown,
-      monthlyFlow: monthlyFlowData,
-    };
-  }, [transactions]);
-
-
-  // Custom scrollbar style for dark mode
-  useEffect(() => {
-    const style = document.createElement('style');
-    style.innerHTML = `
-      .custom-scrollbar::-webkit-scrollbar { width: 8px; }
-      .custom-scrollbar::-webkit-scrollbar-track { background: #1F2937; }
-      .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
-      .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #4B5563; }
-    `;
-    document.head.appendChild(style);
-    return () => { document.head.removeChild(style); };
-  }, []);
-
-  return (
-    <div className="min-h-screen bg-gray-900 font-sans p-4 sm:p-8 relative">
-      <header className="mb-8 border-b border-gray-700/50 pb-4 flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-extrabold text-indigo-400 flex items-center">
-            <Home className="w-7 h-7 mr-3" />
-            Financial Ledger Dashboard
-          </h1>
-          <p className="text-gray-400 mt-1 text-sm">Minimalist dark mode for real-time tracking.</p>
-        </div>
-        <button
-          onClick={() => setShowModal(true)}
-          disabled={!db || !userId}
-          className="flex items-center bg-indigo-600 text-white font-semibold py-2 px-4 rounded-full shadow-lg hover:bg-indigo-700 transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Plus className="w-5 h-5 mr-2" />
-          Add Transaction
-        </button>
-      </header>
-      
-      {/* Show User ID for collaboration/debugging */}
-      {userId && (
-        <p className="text-sm text-gray-500 mb-4 truncate">
-            User ID: <span className="text-gray-400 font-mono">{userId}</span>
-        </p>
-      )}
-
-      {/* Stats Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <StatsCard 
-          title="Total Balance" 
-          value={totalBalance} 
-          icon={DollarSign} 
-          colorClass={totalBalance >= 0 ? 'text-indigo-400' : 'text-red-400'}
-        />
-        <StatsCard 
-          title="Total Income" 
-          value={totalIncome} 
-          icon={TrendingUp} 
-          colorClass="text-green-400"
-        />
-        <StatsCard 
-          title="Total Expenses" 
-          value={totalExpenses} 
-          icon={TrendingDown} 
-          colorClass="text-red-400"
-        />
-      </div>
-
-      {/* Main Content: Charts & Transactions */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Monthly Cash Flow Bar Chart (2/3 width on desktop) */}
-        <BarChartComponent data={monthlyFlow} />
-
-        {/* Expense Breakdown Pie Chart (1/3 width on desktop) */}
-        <PieChartComponent data={expenseBreakdown} />
-
-        {/* Recent Transactions List (Full width row below charts) */}
-        <div className="lg:col-span-3">
-          <TransactionList transactions={transactions} isLoading={isLoading} />
-        </div>
-      </div>
-
-      <footer className="mt-10 text-center text-sm text-gray-600 border-t border-gray-700/50 pt-4">
-        Data is saved securely to your private Firestore ledger.
-      </footer>
-      
-      <AddTransactionModal 
-        isVisible={showModal} 
-        onClose={() => setShowModal(false)} 
-        db={db} 
-        userId={userId} 
-      />
+    <div id="loading-overlay" class="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center hidden">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-400"></div>
     </div>
-  );
-};
 
-export default App;
+    <div class="max-w-xl mx-auto">
+        <!-- Header and Auth Status -->
+        <header class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-teal-400">Budget Tracker</h1>
+            <button id="auth-button" class="text-sm px-3 py-1 rounded-lg bg-red-600 hover:bg-red-700 transition" title="Click to Log In">
+                Login
+            </button>
+        </header>
+
+        <!-- Login Prompt/App Content Container -->
+        <div id="app-container">
+            <!-- Content will be injected here after login -->
+        </div>
+
+    </div>
+
+    <!-- Custom Alert/Error Modal -->
+    <div id="modal-container" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden" onclick="closeModal()">
+        <div id="modal-content" class="bg-[#272741] p-6 rounded-xl shadow-2xl max-w-sm w-full mx-4" onclick="event.stopPropagation()">
+            <h3 id="modal-title" class="text-xl font-bold mb-3 text-red-400"></h3>
+            <p id="modal-message" class="text-gray-300 mb-4"></p>
+            <button onclick="closeModal()" class="w-full p-2 bg-teal-600 rounded-lg text-white font-semibold hover:bg-teal-700">OK</button>
+        </div>
+    </div>
+
+    <script type="module">
+        // ----------------------------------------------------------------------
+        // 1. FIREBASE SETUP (Updated: Added Google Auth imports)
+        // ----------------------------------------------------------------------
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, addDoc, onSnapshot, collection, query, serverTimestamp, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // This is your unique configuration block copied from the Firebase Console
+        const firebaseConfig = {
+            apiKey: "AIzaSyAyhdCWmVruKIaK8NrncUvcbmEXOh-WG9g",
+            authDomain: "budget-tracker-8856f.firebaseapp.com",
+            projectId: "budget-tracker-8856f",
+            storageBucket: "budget-tracker-8856f.firebasestorage.app",
+            messagingSenderId: "42597224681",
+            appId: "1:42597224681:web:a12de2d7ad069fb1b32078",
+            measurementId: "G-N88GLHGVFX"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        const appId = firebaseConfig.projectId;
+        let userId = null;
+
+        const provider = new GoogleAuthProvider();
+
+        // ----------------------------------------------------------------------
+        // 2. AUTHENTICATION & INITIALIZATION LOGIC
+        // ----------------------------------------------------------------------
+
+        function showModal(title, message, isError = true) {
+            // (Modal logic remains the same)
+            const modalTitle = document.getElementById('modal-title');
+            const modalContent = document.getElementById('modal-content');
+
+            modalTitle.textContent = title;
+            document.getElementById('modal-message').textContent = message;
+
+            if (isError) {
+                modalTitle.classList.remove('text-green-400');
+                modalTitle.classList.add('text-red-400');
+            } else {
+                modalTitle.classList.remove('text-red-400');
+                modalTitle.classList.add('text-green-400');
+            }
+            document.getElementById('modal-container').classList.remove('hidden');
+        }
+
+        window.closeModal = function () {
+            document.getElementById('modal-container').classList.add('hidden');
+        }
+
+        async function handleGoogleSignIn() {
+            const loadingOverlay = document.getElementById('loading-overlay');
+            loadingOverlay.classList.remove('hidden');
+            try {
+                // Initiates Google sign-in flow
+                await signInWithPopup(auth, provider);
+            } catch (error) {
+                console.error("Google Sign-in failed:", error);
+                showModal("Sign-In Error", `Failed to sign in: ${error.message}`, true);
+            } finally {
+                loadingOverlay.classList.add('hidden');
+            }
+        }
+
+        async function handleSignOut() {
+            await signOut(auth);
+            showModal("Logged Out", "You have been logged out successfully.", false);
+        }
+
+        // Authentication Listener: Swaps between Login button and the main app content
+        onAuthStateChanged(auth, (user) => {
+            const authButton = document.getElementById('auth-button');
+            const appContainer = document.getElementById('app-container');
+
+            if (user) {
+                // USER IS LOGGED IN (SYNC WILL NOW WORK)
+                userId = user.uid;
+                authButton.textContent = 'Logout';
+                authButton.classList.remove('bg-red-600', 'hover:bg-red-700');
+                authButton.classList.add('bg-gray-600', 'hover:bg-gray-700');
+                authButton.removeEventListener('click', handleGoogleSignIn);
+                authButton.addEventListener('click', handleSignOut);
+
+                // Render the main application UI
+                renderAppUI(user.email);
+                listenForTransactions();
+
+            } else {
+                // USER IS LOGGED OUT (Show Login Prompt)
+                userId = null;
+                appContainer.innerHTML = renderLoginPrompt();
+                authButton.textContent = 'Login with Google';
+                authButton.classList.remove('bg-gray-600', 'hover:bg-gray-700');
+                authButton.classList.add('bg-teal-600', 'hover:bg-teal-700'); // Use teal for login call-to-action
+                authButton.removeEventListener('click', handleSignOut);
+                authButton.addEventListener('click', handleGoogleSignIn);
+
+                // Handle the case where the button is not the primary login trigger
+                document.getElementById('google-login-button')?.addEventListener('click', handleGoogleSignIn);
+            }
+        });
+
+        // Function to render the login prompt when not signed in
+        function renderLoginPrompt() {
+            return `
+                    <div class="card p-8 rounded-xl text-center mt-12">
+                        <h2 class="text-2xl font-bold mb-4 text-teal-400">Welcome to Zenith Ledger</h2>
+                        <p class="text-gray-300 mb-6">Please log in to sync your budget data across all your devices (desktop and mobile).</p>
+                        <button id="google-login-button" class="w-full p-3 bg-red-600 rounded-xl font-bold text-white hover:bg-red-700 transition duration-150 shadow-lg shadow-red-500/50 flex items-center justify-center space-x-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="white" stroke="currentColor" stroke-width="0" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-google-icon"><path d="M22 12c0-1.58-0.12-3.13-0.35-4.59L21.49 7h-0.01c-0.15-0.74-0.42-1.45-0.78-2.11L20.2 4.2c-0.35-0.65-0.79-1.25-1.28-1.78l-0.17-0.18C18.23 2.51 17.63 2.15 17 1.84L16.2 1.48C15.53 1.25 14.77 1.09 14 1.03C13.23 0.98 12.47 0.96 11.7 0.96C10.93 0.96 10.17 0.98 9.4 1.03C8.63 1.09 7.87 1.25 7.2 1.48L6.4 1.84C5.77 2.15 5.17 2.51 4.65 2.87l-0.18 0.17C3.96 3.55 3.48 4.15 3.09 4.81L2.73 5.4C2.37 6.06 2.1 6.77 1.95 7.49l-0.11 0.76C1.49 9.38 1.22 10.66 1.05 12c-0.17 1.34-0.17 2.62 0 3.9C1.22 16.54 1.49 17.82 1.84 19.01l0.11 0.76C2.1 20.45 2.37 21.16 2.73 21.82L3.09 22.41C3.48 23.07 3.96 23.67 4.5 24.16l0.17 0.17C5.17 24.49 5.77 24.85 6.4 25.21l0.8 0.36C7.87 25.66 8.63 25.82 9.4 25.88C10.17 25.93 10.93 25.95 11.7 25.95C12.47 25.95 13.23 25.93 14 25.88C14.77 25.82 15.53 25.66 16.2 25.43L17 25.07C17.63 24.76 18.23 24.4 18.75 24.04l0.18-0.17C19.44 23.36 19.92 22.76 20.31 22.1L20.67 21.51C21.03 20.85 21.3 20.14 21.45 19.42l0.11-0.76C21.82 17.58 22.08 16.3 22.25 15c0.17-1.34 0.17-2.62 0-3.9Z" fill="#FFF"/><path d="M12 12c-2.4 0-4.4 2-4.4 4.4v0.2c0 2.4 2 4.4 4.4 4.4s4.4-2 4.4-4.4v-0.2c0-2.4-2-4.4-4.4-4.4Z" fill="#4285F4"/><path d="M12 8.5v4.5l-4.5 4.5" fill="#4285F4"/><path d="M16.5 16.5l-4.5-4.5" fill="#34A853"/><path d="M16.5 8.5v4.5l-4.5 4.5" fill="#FBBC05"/><path d="M7.5 16.5l4.5-4.5" fill="#EA4335"/><path d="M12 8.5l-4.5 4.5" fill="#4285F4"/><path d="M12 17.5l4.5-4.5" fill="#34A853"/><path d="M7.5 8.5h9v9h-9Z" fill="none"/></svg>
+                            Sign in with Google
+                        </button>
+                    </div>
+                `;
+        }
+
+        // Function to render the main budget tracking UI
+        function renderAppUI(email) {
+            document.getElementById('app-container').innerHTML = `
+                    <!-- Current Balance Summary -->
+                    <div class="card p-6 rounded-xl mb-6">
+                        <h2 class="text-xl font-semibold mb-3 text-gray-300">Current Balance</h2>
+                        <p id="current-balance" class="text-5xl font-extrabold mb-4 text-white">Rs. 0.00</p>
+                        <div class="flex space-x-4 text-center">
+                            <div class="flex-1 p-3 rounded-lg bg-green-900/50 border border-green-700">
+                                <p class="text-sm text-gray-400">Income</p>
+                                <p id="total-income" class="text-2xl font-bold text-green-400 mt-1">Rs. 0.00</p>
+                            </div>
+                            <div class="flex-1 p-3 rounded-lg bg-red-900/50 border border-red-700">
+                                <p class="text-sm text-gray-400">Expenses</p>
+                                <p id="total-expenses" class="text-2xl font-bold text-red-400 mt-1">Rs. 0.00</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- User ID Display (Now shows Email) -->
+                    <div class="bg-blue-900/50 text-blue-300 text-xs p-2 rounded-lg mb-6">
+                        <p class="font-medium">Signed in as: <span id="user-id-display" class="break-words font-mono text-sm text-yellow-300">${email}</span></p>
+                    </div>
+
+
+                    <!-- Add New Transaction Form -->
+                    <div class="card p-6 rounded-xl mb-6">
+                        <h2 class="text-2xl font-semibold mb-4 text-gray-200">Add New Transaction</h2>
+                        <form id="transaction-form">
+
+                            <!-- Type Selection (Income/Expense) -->
+                            <div class="flex space-x-4 mb-4">
+                                <label class="flex-1 p-3 rounded-lg border cursor-pointer transition" for="type-income" id="label-income">
+                                    <input type="radio" id="type-income" name="type" value="Income" checked class="mr-2 text-teal-400 focus:ring-teal-500">
+                                    <span class="font-semibold text-green-400">Income</span>
+                                </label>
+                                <label class="flex-1 p-3 rounded-lg border cursor-pointer transition" for="type-expense" id="label-expense">
+                                    <input type="radio" id="type-expense" name="type" value="Expense" class="mr-2 text-teal-400 focus:ring-teal-500">
+                                    <span class="font-semibold text-red-400">Expense</span>
+                                </label>
+                            </div>
+
+                            <!-- Description -->
+                            <div class="mb-4">
+                                <label for="description" class="block text-sm font-medium mb-1 text-gray-300">Description</label>
+                                <input type="text" id="description" placeholder="E.g., Salary, Groceries, Rent" required class="w-full p-3 rounded-lg bg-[#3a3a5a] border border-[#5a5a8a] focus:ring-teal-400 focus:border-teal-400 text-white">
+                            </div>
+
+                            <!-- Amount and Category -->
+                            <div class="flex space-x-4 mb-6">
+                                <div class="flex-1">
+                                    <label for="amount" class="block text-sm font-medium mb-1 text-gray-300">Amount (Rs)</label>
+                                    <input type="number" id="amount" placeholder="55.00" required min="0.01" step="0.01" class="w-full p-3 rounded-lg bg-[#3a3a5a] border border-[#5a5a8a] focus:ring-teal-400 focus:border-teal-400 text-white">
+                                </div>
+                                <div class="flex-1">
+                                    <label for="category" class="block text-sm font-medium mb-1 text-gray-300">Category</label>
+                                    <select id="category" required class="w-full p-3 rounded-lg bg-[#3a3a5a] border border-[#5a5a8a] focus:ring-teal-400 focus:border-teal-400 text-white appearance-none pr-8">
+                                        <option value="" disabled selected>Select Category</option>
+                                        <option value="Salary">Salary</option>
+                                        <option value="Investment">Investment</option>
+                                        <option value="Groceries">Groceries</option>
+                                        <option value="Rent">Rent</option>
+                                        <option value="Transportation">Transportation</option>
+                                        <option value="Entertainment">Entertainment</option>
+                                        <option value="Other">Other</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <button type="submit" class="w-full p-3 bg-teal-600 rounded-xl font-bold text-white hover:bg-teal-700 transition duration-150 shadow-lg shadow-teal-500/50">
+                                Add Transaction
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Recent Transactions List -->
+                    <div class="card p-6 rounded-xl">
+                        <h2 class="text-2xl font-semibold mb-4 text-gray-200">Recent Transactions</h2>
+                        <div id="transactions-list" class="scrollable-list space-y-3">
+                            <p class="text-center text-gray-500" id="loading-data-message">Loading data...</p>
+                        </div>
+                        <div id="no-transactions-message" class="text-center text-gray-500 mt-4 hidden">
+                            <p>No transactions yet. Add your first income or expense!</p>
+                        </div>
+                    </div>
+                `;
+            // Re-attach event listeners after rendering the new HTML
+            attachEventListeners();
+        }
+
+        // ----------------------------------------------------------------------
+        // 3. DATABASE FUNCTIONS (No change needed here, it still relies on global userId)
+        // ----------------------------------------------------------------------
+
+        function getTransactionCollectionRef() {
+            // Path: /artifacts/{appId}/users/{userId}/transactions
+            if (!userId) {
+                console.error("Cannot get collection ref: User ID is null.");
+                return null;
+            }
+            return collection(db, `artifacts/${appId}/users/${userId}/transactions`);
+        }
+
+        async function addTransaction(data) {
+            const transactionsRef = getTransactionCollectionRef();
+            if (!transactionsRef) return;
+
+            const loadingOverlay = document.getElementById('loading-overlay');
+            loadingOverlay.classList.remove('hidden');
+
+            try {
+                await addDoc(transactionsRef, {
+                    ...data,
+                    timestamp: serverTimestamp()
+                });
+                showModal("Success!", "Transaction saved successfully.", false);
+            } catch (error) {
+                console.error("Error adding transaction: ", error);
+                showModal("Database Error", `Failed to save transaction: ${error.message}`, true);
+            } finally {
+                loadingOverlay.classList.add('hidden');
+            }
+        }
+
+        async function deleteTransaction(id) {
+            if (!userId) {
+                console.error("Cannot delete transaction: User ID is null.");
+                return;
+            }
+
+            const transactionDocRef = doc(db, `artifacts/${appId}/users/${userId}/transactions`, id);
+
+            try {
+                await deleteDoc(transactionDocRef);
+            } catch (error) {
+                console.error("Error deleting document: ", error);
+                showModal("Deletion Error", `Failed to delete transaction: ${error.message}`, true);
+            }
+        }
+
+        function listenForTransactions() {
+            if (!userId) {
+                // If not logged in, wait for the onAuthStateChanged to run
+                return;
+            }
+
+            const transactionsRef = getTransactionCollectionRef();
+            if (!transactionsRef) {
+                document.getElementById('loading-data-message').textContent = "Authentication required.";
+                return;
+            }
+
+            const q = query(transactionsRef);
+
+            onSnapshot(q, (snapshot) => {
+                const transactions = [];
+                snapshot.forEach(doc => {
+                    const timestamp = doc.data().timestamp ? doc.data().timestamp.toDate() : new Date();
+                    transactions.push({
+                        id: doc.id,
+                        ...doc.data(),
+                        timestamp: timestamp
+                    });
+                });
+
+                transactions.sort((a, b) => b.timestamp - a.timestamp);
+
+                renderTransactions(transactions);
+                updateSummary(transactions);
+
+                // Hide loading/show no transactions message
+                document.getElementById('loading-data-message').classList.add('hidden');
+                if (transactions.length === 0) {
+                    document.getElementById('no-transactions-message')?.classList.remove('hidden');
+                } else {
+                    document.getElementById('no-transactions-message')?.classList.add('hidden');
+                }
+            }, (error) => {
+                console.error("Firestore listen error: ", error);
+                document.getElementById('loading-data-message').textContent = `Data load failed: ${error.message}`;
+                showModal("Data Error", "Could not load transactions. Please check your network connection.", true);
+            });
+        }
+
+        // ----------------------------------------------------------------------
+        // 4. UI LOGIC (Updated to support dynamic rendering)
+        // ----------------------------------------------------------------------
+
+        const formatCurrency = (amount) => {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'PKR'
+            }).format(amount);
+        };
+
+        function renderTransactions(transactions) {
+            const listEl = document.getElementById('transactions-list');
+            if (!listEl) return;
+
+            listEl.innerHTML = '';
+
+            transactions.forEach(transaction => {
+                const isIncome = transaction.type === 'Income';
+                const sign = isIncome ? '+' : '-';
+                const color = isIncome ? 'text-green-400' : 'text-red-400';
+                const borderColor = isIncome ? 'border-green-600' : 'border-red-600';
+
+                const transactionEl = document.createElement('div');
+                transactionEl.className = `flex justify-between items-center p-4 rounded-xl card border-l-4 ${borderColor}`;
+                transactionEl.innerHTML = `
+                        <div class="flex-1">
+                            <p class="font-semibold text-white">${transaction.description}</p>
+                            <p class="text-xs text-gray-400 mt-1">${transaction.category} • ${transaction.timestamp.toLocaleDateString()}</p>
+                        </div>
+                        <div class="text-right flex items-center space-x-3">
+                            <p class="font-bold text-lg ${color}">${sign}${formatCurrency(transaction.amount)}</p>
+                            <button class="delete-btn text-gray-500 hover:text-red-400 transition" data-id="${transaction.id}">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash-2">
+                                    <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                                </svg>
+                            </button>
+                        </div>
+                    `;
+                listEl.appendChild(transactionEl);
+            });
+
+            // Add event listeners for delete buttons
+            listEl.querySelectorAll('.delete-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const transactionId = e.currentTarget.getAttribute('data-id');
+                    deleteTransaction(transactionId);
+                });
+            });
+        }
+
+        function updateSummary(transactions) {
+            const totalIncomeEl = document.getElementById('total-income');
+            const totalExpensesEl = document.getElementById('total-expenses');
+            const currentBalanceEl = document.getElementById('current-balance');
+
+            if (!totalIncomeEl || !totalExpensesEl || !currentBalanceEl) return;
+
+            const totalIncome = transactions
+                .filter(t => t.type === 'Income')
+                .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+            const totalExpenses = transactions
+                .filter(t => t.type === 'Expense')
+                .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+            const currentBalance = totalIncome - totalExpenses;
+
+            totalIncomeEl.textContent = formatCurrency(totalIncome);
+            totalExpensesEl.textContent = formatCurrency(totalExpenses);
+            currentBalanceEl.textContent = formatCurrency(currentBalance);
+        }
+
+        function attachEventListeners() {
+            // Check if the form exists before attaching the listener
+            const form = document.getElementById('transaction-form');
+            if (!form) return;
+
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+
+                const type = document.querySelector('input[name="type"]:checked').value;
+                const description = document.getElementById('description').value.trim();
+                const amount = parseFloat(document.getElementById('amount').value);
+                const category = document.getElementById('category').value;
+
+                if (description === '' || isNaN(amount) || amount <= 0 || category === '') {
+                    showModal("Input Error", "Please ensure all fields are filled correctly and the amount is positive.", true);
+                    return;
+                }
+
+                const newTransaction = {
+                    type,
+                    description,
+                    amount,
+                    category
+                };
+
+                addTransaction(newTransaction);
+                e.target.reset(); // Clear form
+            });
+
+            // Theme toggle logic (decorative now)
+            document.getElementById('theme-toggle')?.addEventListener('click', () => {
+                showModal("Feature Not Implemented", "The theme toggle is currently decorative. The app is set to dark mode permanently.", false);
+            });
+
+            // Initial styling for radio buttons
+            const incomeRadio = document.getElementById('type-income');
+            const expenseRadio = document.getElementById('type-expense');
+
+            if (incomeRadio && expenseRadio) {
+                const incomeLabel = document.getElementById('label-income');
+                const expenseLabel = document.getElementById('label-expense');
+
+                const updateRadioStyles = () => {
+                    if (incomeRadio.checked) {
+                        incomeLabel.className = 'flex-1 p-3 rounded-lg border-2 border-green-500 bg-green-900/20 cursor-pointer transition';
+                        expenseLabel.className = 'flex-1 p-3 rounded-lg border border-[#5a5a8a] cursor-pointer transition';
+                    } else {
+                        incomeLabel.className = 'flex-1 p-3 rounded-lg border border-[#5a5a8a] cursor-pointer transition';
+                        expenseLabel.className = 'flex-1 p-3 rounded-lg border-2 border-red-500 bg-red-900/20 cursor-pointer transition';
+                    }
+                };
+
+                incomeRadio.addEventListener('change', updateRadioStyles);
+                expenseRadio.addEventListener('change', updateRadioStyles);
+                updateRadioStyles(); // Initial call
+            }
+        }
+
+    </script>
+</body>
+</html>
